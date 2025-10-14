@@ -1,0 +1,110 @@
+# ================================================
+# Obesity Level Prediction (Classification)
+# ================================================
+
+import pandas as pd
+import numpy as np
+from pathlib import Path
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, ConfusionMatrixDisplay
+import matplotlib.pyplot as plt
+
+# ------------------------------------------------
+# 1️⃣ LOAD DATA
+# ------------------------------------------------
+data_path = Path("ObesityDataSet_raw_and_data_sinthetic.xlsx")  # <-- file in same folder
+xls = pd.ExcelFile(data_path)
+df = pd.concat([pd.read_excel(xls, s) for s in xls.sheet_names], ignore_index=True)
+
+print("✅ Data loaded successfully.")
+print("Shape:", df.shape)
+print("Columns:", df.columns.tolist())
+print()
+
+# ------------------------------------------------
+# 2️⃣ DEFINE FEATURES AND TARGET
+# ------------------------------------------------
+target = "NObeyesdad"
+X = df.drop(columns=[target])
+y = df[target].astype("category")
+
+# ------------------------------------------------
+# 3️⃣ PREPROCESSING (Encode categorical + scale numeric)
+# ------------------------------------------------
+cat_cols = X.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
+num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", StandardScaler(), num_cols),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
+    ]
+)
+
+# ------------------------------------------------
+# 4️⃣ MODEL PIPELINE
+# ------------------------------------------------
+model = RandomForestClassifier(n_estimators=200, random_state=42)
+
+pipeline = Pipeline(steps=[
+    ("preprocess", preprocessor),
+    ("model", model)
+])
+
+# ------------------------------------------------
+# 5️⃣ TRAIN / TEST SPLIT
+# ------------------------------------------------
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, stratify=y, random_state=42
+)
+
+# ------------------------------------------------
+# 6️⃣ TRAIN MODEL
+# ------------------------------------------------
+pipeline.fit(X_train, y_train)
+y_pred = pipeline.predict(X_test)
+
+# ------------------------------------------------
+# 7️⃣ EVALUATE PERFORMANCE
+# ------------------------------------------------
+acc = accuracy_score(y_test, y_pred)
+print(f"🎯 Accuracy on test set: {acc:.3f}\n")
+
+print("📊 Classification Report:")
+print(classification_report(y_test, y_pred))
+
+# Confusion matrix
+cm = confusion_matrix(y_test, y_pred, labels=pipeline.classes_)
+fig, ax = plt.subplots(figsize=(10, 8))
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=pipeline.classes_)
+disp.plot(ax=ax, colorbar=False)
+plt.title("Confusion Matrix — Random Forest Classifier")
+plt.xticks(rotation=45, ha="right")
+plt.tight_layout()
+plt.show()
+
+# ------------------------------------------------
+# 8️⃣ FEATURE IMPORTANCE (Optional)
+# ------------------------------------------------
+ohe = pipeline.named_steps["preprocess"].named_transformers_["cat"].named_steps["onehot"]
+cat_feature_names = ohe.get_feature_names_out(cat_cols)
+feature_names = num_cols + list(cat_feature_names)
+
+importances = pipeline.named_steps["model"].feature_importances_
+feat_imp = pd.DataFrame({"Feature": feature_names, "Importance": importances})
+feat_imp = feat_imp.sort_values(by="Importance", ascending=False).head(15)
+
+print("\n🔥 Top 15 Important Features:")
+print(feat_imp)
+
+# Bar plot
+plt.figure(figsize=(10, 6))
+plt.barh(feat_imp["Feature"][::-1], feat_imp["Importance"][::-1])
+plt.title("Top 15 Feature Importances")
+plt.xlabel("Importance")
+plt.tight_layout()
+plt.show()
